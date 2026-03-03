@@ -20,7 +20,7 @@ def identify_default_images(image_path: str):
     """
 
     labels = ["computer generated image", "photograph"]
-    results = clip("image_path", candidate_labels=labels)
+    results = clip(image_path, candidate_labels=labels)
 
     if results[0]["label"] == labels[0]:
         default_image = 1
@@ -30,7 +30,7 @@ def identify_default_images(image_path: str):
     return default_image
 
 
-RoomList = ["kitchen", "bathroom", "living room", "exterior", "storage", "entry", "store", "something else"]
+RoomList = ["kitchen", "bathroom", "living room", "bedroom", "exterior", "storage", "entry", "shop", "floor plan", "something else"]
 def assign_room_type(image_path: str, labels = RoomList):
     """
     Use CLIP to identify the room type of the image.
@@ -40,17 +40,17 @@ def assign_room_type(image_path: str, labels = RoomList):
     Input: image path and list of possible room types
     Output: label of room type depicted in the image
     """
-    results = clip("image_path", candidate_labels=labels)
+    results = clip(image_path, candidate_labels=labels)
     room_type = results[0]["label"]
     score = results[0]["score"]
 
-    if score < 0.6:
-        room_type = "something else"
-    return room_type
+    #if score < 0.6:
+    #    room_type = "something else"
+    return (room_type, score)
 
 
-AttributeDict = [{"kitchen": ["brightness"],
-                  "bedroom": ["size", "brightness"]}]
+AttributeDict = [{"kitchen": ["luxury", "brightness"],
+                  "bedroom": ["brightness"]}]
 def get_score(image_path: str, room_type: str, attribute_dict = AttributeDict):
     """
     Use CLIP to score the room according to each attribute.
@@ -65,7 +65,7 @@ def get_score(image_path: str, room_type: str, attribute_dict = AttributeDict):
     dict = {}
     for attribute in attribute_list:
         labels = ["yes "+attribute, "no "+attribute]
-        results = clip("image_path", candidate_labels=labels)
+        results = clip(image_path, candidate_labels=labels)
         label = results[0]["label"]
         score = results[0]["score"]
         if label != "yes "+attribute:
