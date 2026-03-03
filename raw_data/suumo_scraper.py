@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 """
-SUUMO used condo scraper (中古マンション)
+SUUMO property scraper — used condos (中古マンション), Tokyo 23 wards.
 
-Outputs:
-  <out-dir>/listings.csv   — one row per listing
-  <out-dir>/images.csv     — one row per image
-  <img-dir>/<source_id>/<sha_prefix>.jpg
+Supports both SUUMO search interfaces:
+  - /ms/chuko/ used-condo search  (nc_XXXXXX listing IDs)
+  - /jj/bukken/ichiran/JJ010FJ001/ general search  (jnc=XXXXXX listing IDs)
 
-Usage:
-  python suumo_scraper.py "https://suumo.jp/ms/chuko/tokyo/sc_minato/" --pages 3
+Outputs (per batch):
+  <out-dir>/listings.csv   — one row per listing (price, area, layout, address …)
+  <out-dir>/images.csv     — one row per downloaded interior image
+  <img-dir>/<source_id>/   — original-size images, named by URL hash
+
+Images are saved at original resolution — no resizing or compression is applied.
+
+Batch usage (500 listings at a time):
+  python suumo_scraper.py --batch 1          # listings 1-500
+  python suumo_scraper.py --batch 2          # listings 501-1000 (auto checkpoint)
+  python suumo_scraper.py --batch 3          # listings 1001+ (runs to end)
+
+Single test run (1 page ≈ 20 listings):
+  python suumo_scraper.py --pages 1 --out-dir test_out --img-dir test_images
 """
 
 from __future__ import annotations
@@ -30,6 +41,13 @@ from urllib.parse import urljoin, urlparse, unquote
 import requests
 from bs4 import BeautifulSoup
 from tqdm import tqdm
+
+# Google Cloud Storage — only required when --gcs-bucket is used
+try:
+    from google.cloud import storage as gcs_storage
+    _GCS_AVAILABLE = True
+except ImportError:
+    _GCS_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -173,12 +191,89 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def safe_filename(url: str) -> str:
+def safe_filename(url: str, source_id: str = "") -> str:
+    """Return a stable filename: <source_id>_<url_hash><ext>
+    Example: 12345678_a1b2c3d4e5f6g7h8.jpg
+    """
     h   = hashlib.sha256(url.encode()).hexdigest()[:16]
     ext = os.path.splitext(urlparse(url).path)[1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".webp", ".avif"):
         ext = ".jpg"
-    return f"{h}{ext}"
+    prefix = f"{source_id}_" if source_id else ""
+    return f"{prefix}{h}{ext}"
+
+
+# ---------------------------------------------------------------------------
+# Google Cloud Storage helpers
+# ---------------------------------------------------------------------------
+
+class GCSStore:
+    """Thin wrapper around a GCS bucket for image upload + existence checks."""
+
+    def __init__(self, bucket_name: str, prefix: str = "suumo_images") -> None:
+        if not _GCS_AVAILABLE:
+            raise RuntimeError(
+                "google-cloud-storage is not installed. "
+                "Run: pip install google-cloud-storage"
+            )
+        self._client = gcs_storage.Client()
+        self._bucket = self._client.bucket(bucket_name)
+        self._prefix = prefix.rstrip("/")
+
+    def blob_name(self, source_id: str, filename: str) -> str:
+        return f"{self._prefix}/{source_id}/{filename}"
+
+    def exists(self, source_id: str, filename: str) -> bool:
+        return self._bucket.blob(self.blob_name(source_id, filename)).exists()
+
+    def upload_from_bytes(self, source_id: str, filename: str, data: bytes) -> str:
+        """Upload raw bytes and return the gs:// URI."""
+        blob = self._bucket.blob(self.blob_name(source_id, filename))
+        blob.upload_from_string(data, content_type="image/jpeg")
+        return f"gs://{self._bucket.name}/{blob.name}"
+
+    def upload_from_file(self, source_id: str, filename: str, local_path: str) -> str:
+        """Upload a local file and return the gs:// URI."""
+        blob = self._bucket.blob(self.blob_name(source_id, filename))
+        blob.upload_from_filename(local_path)
+        return f"gs://{self._bucket.name}/{blob.name}"
+
+
+def maximize_image_url(url: str) -> str:
+    """
+    Remove SUUMO server-side resize parameters to get the largest available image.
+
+    SUUMO resize URLs look like:
+      /jj/resizeImage?src=/front/gazo/...&w=640&h=480&q=80
+    We drop w/h/q params and request the src image directly instead.
+    """
+    if not url:
+        return url
+    parsed = urlparse(url)
+
+    # Pattern 1: /jj/resizeImage?src=<actual_image_url>&w=...&h=...
+    if "resizeimage" in parsed.path.lower() or "resizeImage" in parsed.path:
+        from urllib.parse import parse_qs
+        qs = parse_qs(parsed.query)
+        src_list = qs.get("src", [])
+        if src_list:
+            # src param contains the real image path — use it directly
+            real_path = src_list[0]
+            if real_path.startswith("http"):
+                return real_path
+            return parsed._replace(path=real_path, query="").geturl()
+
+    # Pattern 2: query string contains width/height/quality resize params — strip them
+    if parsed.query:
+        from urllib.parse import parse_qs, urlencode
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        # Remove common resize params
+        for param in ("w", "h", "width", "height", "q", "quality", "size", "resize", "fit", "crop"):
+            qs.pop(param, None)
+        new_query = urlencode({k: v[0] for k, v in qs.items()})
+        return parsed._replace(query=new_query).geturl()
+
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -234,17 +329,18 @@ def fetch_html_any(
 
 
 def download_image(
-    session: requests.Session,
+    session:    requests.Session,
     default_rp: robotparser.RobotFileParser,
-    cache: Dict[str, robotparser.RobotFileParser],
-    ua: str,
-    img_url: str,
-    out_path: str,
-    referer: Optional[str] = None,
+    cache:      Dict[str, robotparser.RobotFileParser],
+    ua:         str,
+    img_url:    str,
+    out_path:   str,
+    referer:    Optional[str] = None,
+    gcs:        Optional["GCSStore"] = None,
+    source_id:  str = "",
+    filename:   str = "",
 ) -> bool:
-    rp = get_rp(session, default_rp, cache, img_url)
-    if not can_fetch(rp, ua, img_url):
-        return False
+    """Download an image to local disk or GCS bucket (original size, no resizing)."""
     headers = {"Referer": referer} if referer else {}
     for attempt in range(3):
         try:
@@ -253,11 +349,17 @@ def download_image(
             ct = (r.headers.get("Content-Type") or "").lower()
             if ct and "image" not in ct and "octet-stream" not in ct:
                 return False
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
-            with open(out_path, "wb") as f:
-                for chunk in r.iter_content(1 << 17):
-                    if chunk:
-                        f.write(chunk)
+
+            data = b"".join(chunk for chunk in r.iter_content(1 << 17) if chunk)
+
+            if gcs and source_id and filename:
+                # Upload directly to GCS — no local disk needed
+                gcs.upload_from_bytes(source_id, filename, data)
+            else:
+                # Save locally
+                os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                with open(out_path, "wb") as f:
+                    f.write(data)
             return True
         except Exception:
             if attempt < 2:
@@ -495,12 +597,23 @@ def select_interior_images(
 # ---------------------------------------------------------------------------
 
 def extract_detail_links(html: str, base: str) -> List[str]:
+    """Extract listing detail URLs — supports both SUUMO search interfaces:
+      - /ms/chuko/.../nc_XXXXXX/  (used condo search)
+      - /jj/bukken/shosai/?jnc=XXXXXX  (general property search / JJ010FJ001)
+    """
     soup  = BeautifulSoup(html, "lxml")
     links: Set[str] = set()
     for a in soup.select("a[href]"):
-        href = a["href"]
+        href = a.get("href", "")
+        if not href:
+            continue
+        abs_href = urljoin(base, href)
+        # Pattern 1: used condo detail pages
         if "/ms/chuko/" in href and "/nc_" in href:
-            links.add(_canon_url(urljoin(base, href)))
+            links.add(_canon_url(abs_href))
+        # Pattern 2: general property search detail pages
+        elif "/jj/bukken/shosai/" in href:
+            links.add(_canon_url(abs_href))
     return sorted(links)
 
 
@@ -516,18 +629,37 @@ def next_page_url(html: str, base: str) -> Optional[str]:
 
 
 def _canon_url(url: str) -> str:
+    """Normalise listing URLs to remove tracking params."""
     parsed = urlparse(url)
     path   = parsed.path or "/"
+    # Used condo pages: strip all query params
     if "/ms/chuko/" in path and "/nc_" in path:
         if not path.endswith("/"):
             path += "/"
         return parsed._replace(path=path, query="", fragment="").geturl()
+    # General property pages: keep only jnc= param (the listing identifier)
+    if "/jj/bukken/shosai/" in path:
+        from urllib.parse import parse_qs, urlencode
+        qs = parse_qs(parsed.query)
+        jnc = qs.get("jnc", [""])[0]
+        new_query = urlencode({"jnc": jnc}) if jnc else ""
+        return parsed._replace(query=new_query, fragment="").geturl()
     return url.split("#")[0]
 
 
 def _source_id(url: str) -> str:
+    """Extract a stable listing ID from either URL pattern."""
+    # Pattern 1: /ms/chuko/.../nc_XXXXXX/
     m = re.search(r"/nc_(\d+)/", url)
-    return m.group(1) if m else hashlib.md5(url.encode()).hexdigest()[:10]
+    if m:
+        return m.group(1)
+    # Pattern 2: /jj/bukken/shosai/?jnc=XXXXXX
+    from urllib.parse import parse_qs, urlparse as _up
+    qs = parse_qs(_up(url).query)
+    jnc = qs.get("jnc", [""])[0]
+    if jnc:
+        return jnc
+    return hashlib.md5(url.encode()).hexdigest()[:10]
 
 
 # ---------------------------------------------------------------------------
@@ -824,15 +956,17 @@ def _append_row(path: str, fieldnames: List[str], row: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def scrape_listing(
-    session:     requests.Session,
-    default_rp:  robotparser.RobotFileParser,
-    rp_cache:    Dict[str, robotparser.RobotFileParser],
-    ua:          str,
-    detail_url:  str,
-    img_dir:     str,
+    session:      requests.Session,
+    default_rp:   robotparser.RobotFileParser,
+    rp_cache:     Dict[str, robotparser.RobotFileParser],
+    ua:           str,
+    detail_url:   str,
+    img_dir:      str,
     listings_csv: str,
-    images_csv:  str,
+    images_csv:   str,
+    gcs:          Optional["GCSStore"] = None,
 ) -> None:
+    """Scrape one listing. Images go to GCS if gcs is set, otherwise to img_dir."""
     detail_url = _canon_url(detail_url)
     html       = fetch_html(session, default_rp, detail_url, ua)
     soup       = BeautifulSoup(html, "lxml")
@@ -847,19 +981,39 @@ def scrape_listing(
 
     imgs_written = 0
     for img_url in sorted(url_to_tag):
-        fname      = safe_filename(img_url)
+        fname      = safe_filename(img_url, source_id=source_id)
         local_path = os.path.join(img_dir, source_id, fname)
 
-        if not os.path.exists(local_path):
-            ok = download_image(session, default_rp, rp_cache, ua, img_url, local_path, referer=detail_url)
+        # Skip if already stored
+        already_exists = (
+            gcs.exists(source_id, fname) if gcs
+            else os.path.exists(local_path)
+        )
+        if not already_exists:
+            ok = download_image(
+                session, default_rp, rp_cache, ua, img_url,
+                out_path=local_path,
+                referer=detail_url,
+                gcs=gcs,
+                source_id=source_id,
+                filename=fname,
+            )
             polite_sleep(0.15, 0.25)
             if not ok:
                 continue
 
+        # image_path column: gs:// URI for GCS, local path otherwise
+        if gcs:
+            img_path = f"gs://{gcs._bucket.name}/{gcs.blob_name(source_id, fname)}"
+            img_hash  = ""   # hashing remote files would require re-downloading
+        else:
+            img_path = local_path
+            img_hash  = sha256_file(local_path)
+
         img_row = ImageRow(
             source="suumo", source_id=source_id, listing_url=detail_url,
             image_url=img_url, image_tag=url_to_tag[img_url],
-            image_path=local_path, image_sha256=sha256_file(local_path),
+            image_path=img_path, image_sha256=img_hash,
         )
         _append_row(images_csv, _fieldnames(ImageRow), asdict(img_row))
         imgs_written += 1
@@ -931,6 +1085,8 @@ def crawl(
     ua:          str,
     resume:      bool = True,
     start_page:  int  = 1,
+    gcs_bucket:  Optional[str] = None,
+    gcs_prefix:  str = "suumo_images",
 ) -> None:
     """
     Crawl `pages` result pages starting from `start_page` (1-indexed).
@@ -969,6 +1125,15 @@ def crawl(
     rp_cache: Dict[str, robotparser.RobotFileParser] = {
         (urlparse(search_url).netloc or "").lower(): rp
     }
+
+    # Set up GCS if bucket name was provided
+    gcs: Optional[GCSStore] = None
+    if gcs_bucket:
+        gcs = GCSStore(gcs_bucket, prefix=gcs_prefix)
+        print(f"📦 Images → gs://{gcs_bucket}/{gcs_prefix}/")
+    else:
+        os.makedirs(img_dir, exist_ok=True)
+        print(f"💾 Images → {img_dir}/"  )
 
     # ------------------------------------------------------------------ #
     # Fast-forward to start_page by following next-page links             #
@@ -1033,7 +1198,7 @@ def crawl(
             skipped += 1
             continue
         try:
-            scrape_listing(session, rp, rp_cache, ua, url, img_dir, listings_csv, images_csv)
+            scrape_listing(session, rp, rp_cache, ua, url, img_dir, listings_csv, images_csv, gcs=gcs)
             done_ids.add(sid)
         except PermissionError:
             pass
@@ -1104,6 +1269,11 @@ Download and delete images<N>/ before starting the next batch.
                     help="Start from the next-page URL saved by a previous batch")
     ap.add_argument("--start-page",     type=int,   default=1,
                     help="Manually start from this result page (1-indexed); ignored with --use-checkpoint")
+    ap.add_argument("--gcs-bucket",     default=None,
+                    help="Google Cloud Storage bucket name to store images (e.g. my-suumo-bucket). "
+                         "If omitted, images are saved locally to --img-dir.")
+    ap.add_argument("--gcs-prefix",     default="suumo_images",
+                    help="Folder prefix inside the GCS bucket (default: suumo_images)")
     args = ap.parse_args()
 
     start_url  = args.search_url
@@ -1154,6 +1324,8 @@ Download and delete images<N>/ before starting the next batch.
         ua=args.ua,
         resume=not args.no_resume,
         start_page=start_page,
+        gcs_bucket=args.gcs_bucket,
+        gcs_prefix=args.gcs_prefix,
     )
 
 
