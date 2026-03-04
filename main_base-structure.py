@@ -2,6 +2,7 @@ import torch
 from transformers import pipeline
 import pandas as pd
 import pathlib
+from sklearn.compose import ColumnTransformer
 
 from clip_functions.clip_functions import assign_room_type, identify_default_images, get_score
 from clip_functions.adding_clip_columns import add_clip_columns
