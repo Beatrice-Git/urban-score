@@ -187,16 +187,6 @@ def pred(
 
     print("\n⭐️ Use case: predict")
 
-    if X_pred is None:
-        X_pred = pd.DataFrame(dict(
-        pickup_datetime=[pd.Timestamp("2013-07-06 17:18:00", tz='UTC')],
-        pickup_longitude=[-73.950655],
-        pickup_latitude=[40.783282],
-        dropoff_longitude=[-73.984365],
-        dropoff_latitude=[40.769802],
-        passenger_count=[1],
-    ))
-
     # Load the model
     data_path = pathlib.Path(path_to_project)
     filename = data_path / 'finalized_model.sav'
