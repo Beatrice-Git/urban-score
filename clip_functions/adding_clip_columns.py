@@ -66,6 +66,7 @@ def add_clip_columns(df: pd.DataFrame, image_folder: pathlib.PosixPath, room_lis
     return df
 
 
+
 def average_scoring(df, attribute_list):
     """
     Sometimes, several pictures of the same room type are given.
