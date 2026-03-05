@@ -8,6 +8,7 @@ from sklearn.model_selection import test_train_split
 
 from ml_logic.data_clean import initialize_clip, data_clean, add_clip_columns, average_scoring
 from ml_logic.model import initialize_model, train_model, evaluate_model
+from preprocessor_pipeline import preprocess_features
 
 def load_data(path_to_project: str, nr_batches):
 
@@ -105,13 +106,19 @@ def preprocess(
     data_path = pathlib.Path(path_to_project)
     data = pd.read_csv(data_path / "listings_with_score.csv")
 
-    X_train, X_test, y_train, y_test = test_train_split(data, split_ratio)
+    X = data.drop(columns=["price_man_yen"]).copy()
+    y = data["price_man_yen"]
 
-    "..."
+    X_preprocessed = preprocess_features(X)
 
-    X_train_preprocessed, X_test_preprocessed, y_train_preprocessed, y_test_preprocessed = "..."
+    X_train, X_test, y_train, y_test = test_train_split(X_preprocessed, y, split_ratio)
 
-    return X_train_preprocessed, X_test_preprocessed, y_train_preprocessed, y_test_preprocessed
+    X_train.to_csv(data_path / "data_dump/X_train.csv", index = False)
+    X_test.to_csv(data_path / "data_dump/X_test.csv", index = False)
+    y_train.to_csv(data_path / "data_dump/y_train.csv", index = False)
+    y_test.to_csv(data_path / "data_dump/y_test.csv", index = False)
+
+    return X_train, X_test, y_train, y_test
 
 
 
@@ -129,8 +136,8 @@ def train(
 
     # Load processed data
     data_path = pathlib.Path(path_to_project)
-    X_train = pd.read_csv(data_path / "X_train.csv")
-    y_train = pd.read_csv(data_path / "y_train.csv")
+    X_train = pd.read_csv(data_path / "data_dump/X_train.csv")
+    y_train = pd.read_csv(data_path / "data_dump/y_train.csv")
 
     # depending on how Lances saves the preprocessed data: create (X_train_processed, y_train)
 
@@ -145,7 +152,7 @@ def train(
             )
 
     # Save the model to a file
-    filename = data_path / 'finalized_model.sav'
+    filename = data_path / "data_dump/finalized_model.sav"
     with open(filename, 'wb') as file:
         pickle.dump(model, file)
 
@@ -159,10 +166,10 @@ def evaluate(
     ):
 
     data_path = pathlib.Path(path_to_project)
-    X_test = pd.read_csv(data_path / "X_test.csv")
-    y_test = pd.read_csv(data_path / "y_test.csv")
+    X_test = pd.read_csv(data_path / "data_dump/X_test.csv")
+    y_test = pd.read_csv(data_path / "data_dump/y_test.csv")
 
-    filename = data_path / 'finalized_model.sav'
+    filename = data_path / "data_dump/finalized_model.sav"
 
     # Load the model
     with open(filename, 'rb') as file:
@@ -179,7 +186,7 @@ def evaluate(
 
 def pred(
         path_to_project: str,
-        X_pred: pd.DataFrame = None
+        X_new: pd.DataFrame = None
     ) -> np.ndarray:
     """
     Make a prediction using the latest trained model
@@ -189,13 +196,13 @@ def pred(
 
     # Load the model
     data_path = pathlib.Path(path_to_project)
-    filename = data_path / 'finalized_model.sav'
+    filename = data_path / "data_dump/finalized_model.sav"
 
     with open(filename, 'rb') as file:
         model = pickle.load(file)
     assert model is not None
 
-    X_processed = preprocess(X_pred) # use preprocess function from preprocess.py!!
+    X_processed = preprocess_features(X_new)
     y_pred = model.predict(X_processed)
 
     print("\n✅ prediction done: ", y_pred, y_pred.shape, "\n")
@@ -204,7 +211,7 @@ def pred(
 
 if __name__ == '__main__':
     load_data(".", 50)
-#    preprocess(".")
-#    train(".", 0.3)
+#    preprocess(".", 0.3)
+#    train(".")
 #    evaluate(".")
 #    pred()
