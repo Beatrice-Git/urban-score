@@ -72,11 +72,11 @@ def get_score(image_path: str, room_type: str, attribute_list: list, clip):
 
         else:
             if attribute == "brightness":
-                labels = ["bright", "dark"]
+                labels = ["bright", "not bright"]
             elif attribute == "luxury":
                 labels = ["expensive", "cheap"]
-            elif attribute == "modernity":
-                labels = ["modern", "old fashioned"]
+            elif attribute == "condition":
+                labels = ["new", "used"]
             else:
                 labels = ["yes "+attribute, "no "+attribute]
 

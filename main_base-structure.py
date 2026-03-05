@@ -14,34 +14,34 @@ def load_data(path_to_project: str, nr_batches):
     data_path = pathlib.Path(path_to_project) / "raw_data"
 
     # import images.csv
-    image_df = pd.read_csv(data_path / "images.csv")
+    image_full = pd.read_csv(data_path / "images.csv")
 
     # import listings.csv
-    listings_df = pd.read_csv(data_path / "listings.csv")
+    listings_full = pd.read_csv(data_path / "listings.csv")
+
+    # run data cleaning function
+    listings_full, image_full = data_clean(listings_full, image_full)
+
+    # define room list and attribute dict
+    RoomList = ["kitchen", "bathroom", "toilet", "living room", "bedroom", "walk-in closet", "closet", "entry inside", "exterior", "shop", "floor plan", "control panel", "entry outside", "balcony"]
+    AttributeList = ["luxury", "brightness", "condition"]
+
+    # initialize clip
+    clip = initialize_clip()
 
     previous_listing = 0
-    for listing in np.linspace(len(listings_df)/nr_batches,len(listings_df), nr_batches):
+    for listing in np.linspace(len(listings_full)/nr_batches,len(listings_full), nr_batches).astype("int"):
         start = previous_listing
         stop = listing
 
         previous_listing = listing
 
-        # TEMPORARY!!!
-        listings_df = listings_df[start:stop]\
+        # df into batch
+        listings_df = listings_full[start:stop]\
             .reset_index().drop(columns="index")
         source_id = listings_df["source_id"]
-        image_df = image_df[image_df["source_id"].isin(source_id)]\
+        image_df = image_full[image_full["source_id"].isin(source_id)]\
             .reset_index().drop(columns="index")
-
-        # run data cleaning function
-        listings_df, image_df = data_clean(listings_df, image_df)
-
-        # define room list and attribute dict
-        RoomList = ["kitchen", "bathroom", "toilet", "living room", "bedroom", "walk-in closet", "closet", "entry inside", "exterior", "shop", "floor plan", "control panel", "entry outside"]
-        AttributeList = ["luxury", "brightness", "modernity"]
-
-        # initialize clip
-        clip = initialize_clip()
 
         print("files imported, listings cleaned, clip initialized")
 
@@ -63,15 +63,15 @@ def load_data(path_to_project: str, nr_batches):
         # save csv
         file_exists = os.path.isfile("images_cleaned.csv")
         if file_exists:
-            image_df.to_csv("images_cleaned.csv", mode = "a")
+            image_df.to_csv("images_cleaned.csv", mode = "a", header=False, index=False)
         else:
-            image_df.to_csv("images_cleaned.csv")
+            image_df.to_csv("images_cleaned.csv", index = False)
 
         file_exists = os.path.isfile("listings_cleaned.csv")
         if file_exists:
-            listings_df.to_csv("listings_cleaned.csv", mode = "a")
+            listings_df.to_csv("listings_cleaned.csv", mode = "a", header=False, index=False)
         else:
-            listings_df.to_csv("listings_cleaned.csv")
+            listings_df.to_csv("listings_cleaned.csv", index = False)
 
         # scoring dict into column for each attribute
         details_df = pd.json_normalize(image_df['scoring_dict'])
@@ -82,14 +82,14 @@ def load_data(path_to_project: str, nr_batches):
         print("average scores computed")
 
         # merge listings to include average scores per room type
-        listings_df.join(average_scores)
+        listings_df = listings_df.merge(average_scores, on = "source_id")
 
         # write final data to csv
         file_exists = os.path.isfile("listings_with_scores.csv")
         if file_exists:
-            listings_df.to_csv("listings_with_scores.csv", mode = "a")
+            listings_df.to_csv("listings_with_scores.csv", mode = "a", header=False, index=False)
         else:
-            listings_df.to_csv("listings_with_scores.csv")
+            listings_df.to_csv("listings_with_scores.csv", index = False)
         print("listings_with_scores.csv saved")
 
     return listings_df
