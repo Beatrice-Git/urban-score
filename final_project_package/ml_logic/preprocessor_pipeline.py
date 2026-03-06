@@ -22,6 +22,24 @@ from sklearn.preprocessing import OrdinalEncoder
 from sklearn.preprocessing import TargetEncoder
 from sklearn.preprocessing import FunctionTransformer
 
+def aggregate_columns(X):
+            X = np.asarray(X)
+            return np.nanmean(X, axis=1).reshape(-1, 1)
+
+def mean_luxury_name(transformer, input_features):
+    return ["mean_luxury"]
+
+def mean_brightness_name(transformer, input_features):
+    return ["mean_brightness"]
+
+def mean_condition_name(transformer, input_features):
+    return ["mean_condition"]
+
+
+mean_luxury_transformer = FunctionTransformer(aggregate_columns, feature_names_out=mean_luxury_name)
+mean_brightness_transformer = FunctionTransformer(aggregate_columns, feature_names_out=mean_brightness_name)
+mean_condition_transformer = FunctionTransformer(aggregate_columns, feature_names_out=mean_condition_name)
+
 
 def get_fitted_preprocessor(X_train):
     """
@@ -60,14 +78,17 @@ def get_fitted_preprocessor(X_train):
         #ADD TO PASSTHROUGH LATER[condition_bathroom,condition_bedroom,condition_kitchen,condition_living_room,condition_toilet]
         # This propressor drops the old index, the image count, the address, URL,
         final_preprocessor = ColumnTransformer([
-            ("keep_columns", "passthrough", ["rooms_num","luxury_bathroom","luxury_bedroom",
-                                             "luxury_kitchen","luxury_living_room","luxury_toilet","brightness_bathroom",
-                                             "brightness_bedroom","brightness_kitchen","brightness_living_room",
-                                             "brightness_toilet","condition_bathroom","condition_bedroom","condition_kitchen",
-                                             "condition_living_room","condition_toilet"]),
+            ("keep_columns", "passthrough", ["rooms_num"]),
             ('num_transformer', num_transformer, num_features),
             ('nearest_station_tranformer', station_pipe, ["nearest_station"]),
-            ('ordinal', base_layout_pipe, ['base_layout'])
+            ('ordinal_transformer', base_layout_pipe, ['base_layout']),
+            ('mean_luxury_transformer', mean_luxury_transformer, ["luxury_bathroom","luxury_bedroom",
+                                             "luxury_kitchen","luxury_living_room","luxury_toilet"]),
+            ('mean_brightness_transformer', mean_brightness_transformer, ["brightness_bathroom",
+                                             "brightness_bedroom","brightness_kitchen","brightness_living_room",
+                                             "brightness_toilet"]),
+            ('mean_condition_transformer', mean_condition_transformer, ["condition_bathroom","condition_bedroom","condition_kitchen",
+                                             "condition_living_room","condition_toilet"])
             ], remainder= "drop"
         )
 
