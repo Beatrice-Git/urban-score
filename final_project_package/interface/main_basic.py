@@ -117,7 +117,7 @@ def preprocess(
     preprocesser = get_fitted_preprocessor(X_train)
 
     # Save the preprocessor to a file
-    filename = data_path / "data_dump/preprocessor.sav"
+    filename = data_path / "data_dump/preprocessor.pkl"
     with open(filename, 'wb') as file:
         pickle.dump(preprocesser, file)
 
@@ -149,8 +149,8 @@ def train(
 
     # Load processed data
     data_path = pathlib.Path(path_to_project)
-    X_train = pd.read_csv(data_path / "data_dump/X_train.csv")
-    y_train = pd.read_csv(data_path / "data_dump/y_train.csv")
+    X_train = pd.read_csv(data_path / "data_dump/X_train_preprocessed.csv")
+    y_train = pd.read_csv(data_path / "data_dump/y_train_preprocessed.csv")
 
     # depending on how Lances saves the preprocessed data: create (X_train_processed, y_train)
 
