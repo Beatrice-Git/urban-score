@@ -40,19 +40,30 @@ def get_fitted_preprocessor(X_train):
         # cat_features = ["address"] this is unused yet.
 
         base_layout_pipe = Pipeline([
-            'ordinal', OrdinalEncoder(categories=[["R", "K", "DK", "LDK"]])
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("ordinal", OrdinalEncoder(
+                categories=[["R", "K", "DK", "LDK"]],
+                handle_unknown="use_encoded_value",
+                unknown_value=-1
+            ))
         ])
 
         station_pipe = Pipeline([
             ("ohe", OneHotEncoder(
-                min_frequency=15,        # ✅ tune this (10/20/50 depending on dataset size)
+                min_frequency=10,        # ✅ tune this (10/20/50 depending on dataset size)
                 sparse_output=False
             ))
         ])
 
-        # This propressor drops the old index, the image count, the address, URL, 
+
+        #ADD TO PASSTHROUGH LATER[condition_bathroom,condition_bedroom,condition_kitchen,condition_living_room,condition_toilet]
+        # This propressor drops the old index, the image count, the address, URL,
         final_preprocessor = ColumnTransformer([
-            ("keep_columns", "passthrough", ["source_id", "rooms_num"]),
+            ("keep_columns", "passthrough", ["source_id", "rooms_num","luxury_bathroom","luxury_bedroom",
+                                             "luxury_kitchen","luxury_living_room","luxury_toilet","brightness_bathroom",
+                                             "brightness_bedroom","brightness_kitchen","brightness_living_room",
+                                             "brightness_toilet","condition_bathroom","condition_bedroom","condition_kitchen",
+                                             "condition_living_room","condition_toilet"]),
             ('num_transformer', num_transformer, num_features),
             ('nearest_station_tranformer', station_pipe, ["nearest_station"]),
             ('ordinal', base_layout_pipe, ['base_layout'])
