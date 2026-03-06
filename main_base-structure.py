@@ -188,7 +188,7 @@ def evaluate(
     with open(filename, 'rb') as file:
         model = pickle.load(file)
 
-    mse = evaluate(
+    mse = evaluate_model(
         model,
         X_test,
         y_test
