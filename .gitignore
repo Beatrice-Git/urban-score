@@ -215,3 +215,5 @@ listings_with_scores.csv
 images_cleaned.csv
 listings_cleaned.csv
 
+#assessment tool
+secrets/
