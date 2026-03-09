@@ -68,9 +68,9 @@ def evaluate_model(
     y_test = np.expm1(y_test_log)
     y_pred = np.expm1(y_pred_log)
 
-    rmse = root_mean_squared_error(y_test_log, y_pred_log)
-    mse = mean_squared_error(y_test_log, y_pred_log)
+    rmse = root_mean_squared_error(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
 
-    print(f"✅ Model evaluated, MSE: {round(mse, 7)}")
+    print(f"✅ Model evaluated, MSE: {round(mse, 7)} and RMSE: {round(rmse, 7)}")
 
-    return mse
+    return mse, rmse
