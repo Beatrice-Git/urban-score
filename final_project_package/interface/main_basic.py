@@ -120,6 +120,12 @@ def preprocess(
     data = data[data['price_zscore'].abs() <= 3]
     data = data.drop('price_zscore', axis=1)
 
+    data["building_period"] = pd.cut(
+        data["year_built"],
+        bins=[0, 1980, 2000, float("inf")],
+        labels=["pre 1981", "1981 to 2000", "post 2000"]
+    )
+
     X = data.drop(columns=["price_man_yen"]).copy()
     y = data["price_man_yen"]
 
