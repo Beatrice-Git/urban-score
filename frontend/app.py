@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-import requests
-from final_project_package.embeddings.embeddings import load_clip_model
-from final_project_package.embeddings.embeddings_frontend import get_text_embeddings, similarity
+from final_project_package.embeddings.embeddings import load_clip_model, get_text_embeddings, similarity
 
-st.state.model, st.state.processor = load_clip_model()
-st.state.image_df = pd.read_csv(Path("../data_dump/images_cleaned_embedding.csv"))
+
+state.model, state.processor = load_clip_model()
+state.image_df = pd.read_csv(Path("../data_dump/images_cleaned_embedding.csv"))
 
 '''
 # UrbanScore

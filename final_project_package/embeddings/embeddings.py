@@ -1,4 +1,4 @@
-from torch import no_grad
+from torch import no_grad, tensor
 from transformers import CLIPProcessor, CLIPModel
 
 # Setup and Loading Model
@@ -7,6 +7,21 @@ def load_clip_model():
     model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     return model, processor
+
+# Get Text Embeddings
+def get_text_embeddings(model, processor, texts):
+    print("Generating text embeddings for labels...")
+    inputs = processor(text=texts, return_tensors="pt", padding=True)
+    with no_grad():
+        text_features = model.get_text_features(**inputs)[1][0]
+    text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
+    return text_features
+
+def similarity(image_embedding, text_embedding):
+    # Compute cosine similarity: (n_clusters, 512) @ (512, n_labels) -> (n_clusters, n_labels)
+    similarity = (image_embedding @ tensor(text_embedding).T).numpy()
+
+    return similarity
 
 # Get image embedding
 def get_image_embeddings(model, processor, images):
