@@ -3,9 +3,21 @@ import pandas as pd
 from pathlib import Path
 from final_project_package.embeddings.embeddings import load_clip_model, get_text_embeddings, similarity
 
+@st.cache_data
+def get_clip():
+    return load_clip_model()
 
-state.model, state.processor = load_clip_model()
-state.image_df = pd.read_csv(Path("../data_dump/images_cleaned_embedding.csv"))
+@st.cache_data
+def get_images():
+    return pd.read_csv(Path.cwd() / "data_dump/images_cleaned_embedding.csv")
+
+@st.cache_data
+def get_listings():
+    return pd.read_csv(Path.cwd() / "data_dump/listings_with_scores.csv")
+
+model, processor = get_clip()
+images_df = get_images()
+listings_df = get_listings()
 
 '''
 # UrbanScore
@@ -23,20 +35,17 @@ Either as with the title by just creating a string (or an f-string). Or as with 
 
 query = st.text_input("Image Query", value="skandenavian kitchen")
 
-variable = st.text_input("Variable", value="Square Meters")
+variable = st.selectbox("Variable", listings_df.columns, value="Square Meters")
 
-min_value = st.number_input("Minimum value of Variable", min_value=0, max_value=100000000, value=0, step=0.1)
+min_value = st.number_input("Minimum value of Variable", min_value=0.0, max_value=100000000.0, value=0.0, step=0.1)
 
-text_embedding = get_text_embeddings(st.state.model, st.state.processor, [query])
+text_embedding = get_text_embeddings(model, processor, [query])
 
 similarity = 0.1
 
-center_lon = 35.4123
-center_lat = 139.4132
-
 df = pd.DataFrame({
-    "lon": [center_lon-0.01, center_lon+0.01],
-    "lat": [center_lat-0.01, center_lat+0.01]
+    "lon": listings_df["longitude"],
+    "lat": listings_df["latitude"]
 })
 
 st.map(df)

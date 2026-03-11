@@ -3,14 +3,12 @@ from transformers import CLIPProcessor, CLIPModel
 
 # Setup and Loading Model
 def load_clip_model():
-    print("Loading CLIP model...")
     model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     return model, processor
 
 # Get Text Embeddings
 def get_text_embeddings(model, processor, texts):
-    print("Generating text embeddings for labels...")
     inputs = processor(text=texts, return_tensors="pt", padding=True)
     with no_grad():
         text_features = model.get_text_features(**inputs)[1][0]
