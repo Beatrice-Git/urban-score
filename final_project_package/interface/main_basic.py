@@ -104,7 +104,6 @@ def add_embedding(path_to_project: str, nr_batches):
         else:
             image_df.to_csv(data_path / "data_dump/images_cleaned_embedding.csv", index = False)
 
-
     return image_df
 
 
@@ -332,22 +331,52 @@ def pred(
     assert model is not None
 
     # Load the preprocessor
-    filename = data_path / "data_dump/preprocessor.sav"
+    filename = data_path / "data_dump/preprocessor.pkl"
     with open(filename, 'rb') as file:
         preprocessor = pickle.load(file)
 
-    X_processed = preprocessor.transform(X_new)
+    #X_processed = preprocessor.transform(X_new)
+    X_processed = pd.DataFrame(preprocessor.transform(X_new), columns=preprocessor.get_feature_names_out(), index=X_new.index)
+
     y_pred = model.predict(X_processed)
 
     print("\n✅ prediction done: ", y_pred, y_pred.shape, "\n")
     return y_pred
 
 
+def add_prediction(path_to_project: str):
+
+    # Get the path of the current folder
+    data_path = pathlib.Path(path_to_project)
+
+    # import listings.csv
+    listings_df = pd.read_csv(data_path / "data_dump/listings_with_buildings.csv")
+    X = listings_df.drop(columns=["price_man_yen"]).copy()
+    y = listings_df["price_man_yen"]
+
+    # initialize clip
+    y_pred = np.round(np.expm1(pred(path_to_project, X)),0)
+
+    listings_df["predicted_price"] = y_pred
+
+    print("added prediction...")
+
+    # save csv
+    os.makedirs("data_dump", exist_ok=True)
+    file_exists = os.path.isfile(data_path / "data_dump/listings_with_pred.csv")
+    if file_exists:
+        listings_df.to_csv(data_path / "data_dump/listings_with_pred.csv", mode = "a", header=False, index=False)
+    else:
+        listings_df.to_csv(data_path / "data_dump/listings_with_pred.csv", index = False)
+
+
+    return listings_df
+
 if __name__ == '__main__':
 #    add_geo_onetimeuse()
-    add_embedding(".", 50)
+#    add_embedding(".", 50)
 #    load_data(".", 50)
-#    preprocess(".", 0.3)
+    preprocess(".", 0.3)
 #    train(".")
 #    evaluate(".")
 #    pred()
