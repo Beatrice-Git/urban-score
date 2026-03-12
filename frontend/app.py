@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import plotly.express as px
-from embeddings import load_clip_model, get_text_embeddings, get_similarity
+import numpy as np
+from embeddings import load_clip_model, get_text_embeddings, get_similarity, aggregate_columns
 import base64
 
 @st.cache_resource
@@ -11,6 +12,9 @@ def get_base64_image(path):
         return base64.b64encode(img_file.read()).decode()
 
 logo_base64 = get_base64_image(Path.cwd()/"frontend/GoodDeal.png")
+luxury_base64 = get_base64_image(Path.cwd()/"frontend/Stars.png")
+brightness_base64 = get_base64_image(Path.cwd()/"frontend/Sun.png")
+condition_base64 = get_base64_image(Path.cwd()/"frontend/Wrench.png")
 
 st.set_page_config(layout="wide")
 
@@ -37,6 +41,10 @@ def get_listings():
     img = images_df[images_df["room_type"] != "floor plan"]
     first_images = img.drop_duplicates("source_id")
     df = df.merge(first_images, on="source_id", how="left")
+
+    df["luxury"] = aggregate_columns(df[["luxury_bathroom", "luxury_bedroom", "luxury_kitchen", "luxury_living_room", "luxury_toilet"]])
+    df["brightness"] = aggregate_columns(df[["brightness_bathroom", "brightness_bedroom", "brightness_kitchen", "brightness_living_room", "brightness_toilet"]])
+    df["condition"] = aggregate_columns(df[["condition_bathroom", "condition_bedroom", "condition_kitchen", "condition_living_room", "condition_toilet"]])
 
     return df
 
@@ -141,9 +149,9 @@ st.markdown("""
     border-radius: 6px;
 }
 .container {
-  display: flex; /* Makes the container a flex container */
-  gap: 20px; /* Adds space between columns */
-  border-width: 10px;
+    display: flex; /* Makes the container a flex container */
+    gap: 20px; /* Adds space between columns */
+    border-width: 10px;
 }
 .good {
     background: #50C867;
@@ -151,7 +159,10 @@ st.markdown("""
     border-color: rgba(1, 153, 0, 0.5);
 }
 .column {
-  padding: 15px;
+    padding: 15px;
+}
+.three {
+    width: 33%;
 }
 .left {
     width: 60%; /* Sets the width of the first column */
@@ -166,6 +177,16 @@ st.markdown("""
 }
 .logo img {
     height: 120px;
+}
+.icon {
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.icon img {
+    height: 25px;
+    width: auto;
 }
 .meta {
     color: #555;
@@ -222,6 +243,31 @@ for i, row in listings.iterrows():
                 <div class="column right">
                     <div class="logo">
                         {logo_html}
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f"""
+            {container_def}
+                <div class="column three">
+                    <div class="icon">
+                        <img src="data:image/png;base64,{brightness_base64}">
+                        <span>{np.round(row.get('brightness','')*10,1)}</span>
+                    </div>
+                </div>
+                <div class="column three">
+                    <div class="icon">
+                        <img src="data:image/png;base64,{luxury_base64}">
+                        <span>{np.round(row.get('luxury','')*10,1)}</span>
+                    </div>
+                </div>
+                <div class="column three">
+                    <div class="icon">
+                        <img src="data:image/png;base64,{condition_base64}">
+                        <span>{np.round(row.get('condition','')*10,1)}</span>
                     </div>
                 </div>
             </div>

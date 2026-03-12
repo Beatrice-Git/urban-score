@@ -1,5 +1,10 @@
 from torch import no_grad, tensor
 from transformers import CLIPProcessor, CLIPModel
+import numpy as np
+
+def aggregate_columns(X):
+    X = np.asarray(X)
+    return np.nanmean(X, axis=1).reshape(-1, 1)
 
 # Setup and Loading Model
 def load_clip_model():
