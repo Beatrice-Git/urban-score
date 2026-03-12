@@ -207,8 +207,10 @@ for i, row in listings.iterrows():
             st.markdown(
                 f"""
                 <div class="image-container">
-                    <img src="{row['image_url']}">
-                    <div class="address-overlay">{row.get('address','')}</div>
+                    <a href="{row.get('url','')}" target="_blank" style="text-decoration:none; color:inherit;">
+                        <img src="{row['image_url']}">
+                        <div class="address-overlay">{row.get('address','')}</div>
+                    </a>
                 </div>
                 """,
                 unsafe_allow_html=True
